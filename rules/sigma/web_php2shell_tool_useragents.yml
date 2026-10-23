@@ -1,0 +1,78 @@
+# =====================================================================
+# IONSEC php2shell detector — SIGMA / webserver access logs
+# CVE-2026-109618 (RCE via OOM corruption) + CVE-2026-109619 (RCE via
+# stale global state), disclosed 2026-10-21, fixed 8.2.35/8.3.36/8.4.27/8.5.12
+# =====================================================================
+title: PHP2Shell Self-Identifying Tooling User-Agents (CVE-2026-109618 / CVE-2026-109619)
+id: 7db2735e-3917-5820-a976-1dc98adfe166
+status: experimental
+description: |
+    Detects HTTP client user-agents that self-report PHP2Shell scanner, verifier,
+    probe or PoC tooling. Every string below is copied EXACTLY as published by the
+    cited telemetry owner — none are invented. F5 observed that many attackers
+    blend in with legitimate-looking UAs (plain Mozilla/5.0, curl/8.5.0, Chrome and
+    Firefox strings were among the top-5 observed), so absence of a match here is
+    no clearance. Several ELLIO-captured tool families send no User-Agent at all.
+
+    Fingerprint provenance (all fetched HTTPS 200 by the compiling research agents
+    on 2026-10-23; copied verbatim):
+      - "php2shell-scan/109618"            — ELLIO (08:36 UTC 21 Oct), VulnCheck Canary table, Sophos IOC table
+      - "php2shell-verify/1.0"             — F5 Pattern 1 "Explicit verification probe"; VulnCheck Canary
+      - "php2shell-scan/1.3 (eigen-oppervlak controle; CVE-2026-109618/109619)" — VulnCheck Canary
+      - "Mozilla/5.0 (php2shell-poc)"      — VulnCheck Canary
+      - "php2shell-109618" / "php2shell-109619" — F5 Pattern 3 / Flare (Exploit.in PoC defaults)
+      - appendix family (F5 Labs, 2026-10-22): php2shell-poc/1.0 (authorized-staging-test;
+        marker=cryptographer-php-poc-here) · php2shell-scan/1.0 (+https://github.com/0xrsydn/php2shell-scan)
+        · shellflow-php2shell/1.0 · php2shell-version-check/1.0 (safe, no exploitation)
+        · PHP2Shell-Batch-Verifier/1.0 · SOCRadarLabs/v4 (php2shell-checker) ·
+        sudo3rs-PHP2Shell-Checker/1.4.0 · PHP2Shell-VulnCheck/2.0 (responsible-disclosure)
+        · HexStrike-PHP2Shell-Scanner/1.0 · php2shell-scanner/0.1 (+@ofjaaah)
+        · php-fingerprint/1.0 (security triage; PHP2Shell exposure check)
+        · php-upload-progress-scan/1.0 (internal, authorized-use-only)
+        · Vilnius-SOC-PHP2Shell-Check/1.1 (+read-only fingerprint; contact: soc@vilnius.lt)
+        · Mozilla/5.0 (compatible; ImpervaPHP2ShellChecker/1.0; +https://www.imperva.com/)
+        · Mozilla/5.0 (CERT-In PHP2Shell Assessment)
+        · php2shell-check/0.0.0-20261022111727-d9c486a664e7
+        · php2shell-pasif-tarayici/2.0 (passive fingerprint; only on authorized sites)
+        · php2shell-validate/1.0 (+detection-only; no exploitation)
+        · php2shell-exposure-bash/3.0.0 · php2shell-hunter-fingerprint/1.0
+        · php2shell-mass/9.0 · php2shell-profile-inventory/1.0
+        · php2shell-scope-fingerprint/1.0 · php2shell-universal
+      - "Mozilla/5.0 (php2shell-test/2.0.0)" and "Mozilla/5.0 (php-session-startup-rce-poc)" — ELLIO (2026-10-22 sensors)
+
+    NOTE: several "scanner" UAs in the published appendix are benign triage tools
+    (VulnCheck responsible-disclosure, Imperva checker, Vilnius SOC, CERT-In, etc.).
+    The substring selection flags the family first; triage against your own
+    authorized-testing inventory before escalating. Level high reflects that a hit
+    is almost certainly deliberate PHP2Shell tooling of some kind, benign or not.
+references:
+    - https://www.f5.com/labs/articles/php2shell-exploitation-attempts-observed
+    - https://ellio.tech/en/blog/php2shell-what-we-observed-and-what-to-do/
+    - https://www.vulncheck.com/blog/php2shell-vulnerabilities
+    - https://flare.io/learn/resources/blog/php2shell-exploits-underground-analysis
+    - https://www.wiz.io/blog/php2shell-php-rce
+    - https://www.sophos.com/en-us/security-advisories/sophos-sa-20261021-php2shell
+author: IONSEC
+date: 2026-10-23
+modified: 2026-10-23
+tags:
+    - attack.initial-access
+    - attack.t1190
+    - attack.t1082
+    - cve.2026-109618
+    - cve.2026-109619
+logsource:
+    category: webserver
+detection:
+    sel_family:
+        cs-user-agent|contains|all:
+            - 'php2shell'
+    sel_poc_variant:
+        cs-user-agent|contains:
+            - 'php-session-startup-rce-poc'
+            - 'PHP2Shell'
+    condition: 1 of sel_*
+falsepositives:
+    - Authorized exposure checkers and security teams that tag their scans "php2shell" or "PHP2Shell" (see F5/VulnCheck/Imperva/SOCRadar/CERT-In published checker UAs)
+    - Benign inventory/monitoring tools copying the published checker UA strings
+level: high

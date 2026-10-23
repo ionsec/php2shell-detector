@@ -1,0 +1,78 @@
+# =====================================================================
+# IONSEC php2shell detector — SIGMA / webserver access+WAF logs
+# CVE-2026-109618 + CVE-2026-109619 (disclosed 2026-10-21)
+# =====================================================================
+title: PHP2Shell PoC Multipart Boundary Strings (CVE-2026-109618 / CVE-2026-109619)
+id: 6d90b892-c188-5a36-aaed-475ee165ed41
+status: experimental
+description: |
+    Detects multipart boundary tokens published for PHP2Shell tooling.
+    All strings copied EXACTLY as published:
+
+      - "B7kQpoc618"   — F5 Pattern 3 (62,929-byte OOM payload), Sophos IOC table
+                         (UA php2shell-scan/109618 + boundary B7kQpoc618 + /tmp/nfs
+                         + command ./nfs php), ELLIO PoC capture
+      - "B7kQpoc619"   — Flare: "A PoC posted on Exploit.in sends the user-agents
+                         php2shell-109618 / php2shell-109619 and the multipart
+                         boundaries B7kQpoc618 / B7kQpoc619 unless modified"
+      - "php2shelld656557dacfa4fbc" — F5 Pattern 1 exact Content-Type:
+                         "multipart/form-data; boundary=----php2shelld656557dacfa4fbc"
+      - "------p2s" + 8 hex digits — ELLIO fourth tool family (running since
+                         15:51 UTC 21 Oct; "a boundary of ------p2s and eight hex
+                         digits"); VulnCheck exact capture "------p2s9rdme2st6guc9g0rafic"
+                         with upload filename "p2s.txt"
+      - "----p2shell"  — ELLIO indicators: "multipart boundary strings beginning
+                         ----p2s, including ----p2shell" (the 16:05 OOM tool
+                         "marks its own multipart boundaries with the string p2shell")
+      - "------atk"    — ELLIO (47.238.232.123, UA Mozilla/5.0
+                         (php-session-startup-rce-poc), progress value POC_79fe5e4f)
+      - "--nucleiBoundary" — ELLIO Nuclei-family scanners (122.97.242.167 China
+                         Unicom, progress value "nuclei-probe")
+
+    Structural (not a string) but published by F5 Pattern 2: per-request regenerated
+    64-hex random boundaries — covered by the companion rules, not here.
+
+    Boundaries live in the Content-Type header: this rule needs access/WAF logs
+    that record it (e.g. %\{Content-Type\}i in combined logging, or CDN/WAF request
+    logs). Body-level inspection falls back on the request_body selections.
+references:
+    - https://www.f5.com/labs/articles/php2shell-exploitation-attempts-observed
+    - https://ellio.tech/en/blog/php2shell-what-we-observed-and-what-to-do/
+    - https://www.vulncheck.com/blog/php2shell-vulnerabilities
+    - https://flare.io/learn/resources/blog/php2shell-exploits-underground-analysis
+    - https://www.kelacyber.com/blog/php2shell-underground-response/
+    - https://www.sophos.com/en-us/security-advisories/sophos-sa-20261021-php2shell
+author: IONSEC
+date: 2026-10-23
+modified: 2026-10-23
+tags:
+    - attack.initial-access
+    - attack.t1190
+    - cve.2026-109618
+    - cve.2026-109619
+logsource:
+    category: webserver
+detection:
+    sel_boundary_header:
+        cs-headers-content-type|contains:
+            - 'B7kQpoc618'
+            - 'B7kQpoc619'
+            - 'php2shelld656557dacfa4fbc'
+            - '----p2shell'
+            - '------atk'
+            - '--nucleiBoundary'
+    sel_boundary_prefix:
+        cs-headers-content-type|re: '(?i)boundary=\s"?-{0,8}p2s[0-9a-z]{4,40}'
+    sel_boundary_body:
+        request_body|contains:
+            - 'B7kQpoc618'
+            - 'B7kQpoc619'
+            - 'php2shelld656557dacfa4fbc'
+            - '----p2shell'
+            - '------atk'
+            - '--nucleiBoundary'
+    condition: 1 of sel_*
+falsepositives:
+    - "Boundary strings beginning ----p2s are also usable by benign tooling; the exact published tokens (B7kQpoc618/619, php2shelld656557dacfa4fbc) carry the strongest signal"
+    - Applications whose own boundary generator happens to include the string 'p2s'
+level: high

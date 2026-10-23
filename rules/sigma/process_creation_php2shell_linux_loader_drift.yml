@@ -1,0 +1,101 @@
+# =====================================================================
+# IONSEC php2shell detector — SIGMA / process-creation (Linux)
+# CVE-2026-109618 + CVE-2026-109619 — post-exploitation loader-drift & worker shells
+# =====================================================================
+title: PHP Process Spawns Shell/Downloader or Runs PHP2Shell-Planted Loader — Linux (CVE-2026-109618 / CVE-2026-109619)
+id: 923c08d1-385d-5481-afa4-ee3d082d5730
+status: experimental
+description: |
+    Process-level companion covering the loader-drift and post-exploitation
+    fingerprints for both CVEs. ADAPTED (never silently copied) from the two
+    community Sigma repos that already exist for this bug pair:
+
+      1. ADAPTED: BartoszGarba/php2shell-sigma-rules
+         (public domain / Unlicense — fetched
+         https://raw.githubusercontent.com/BartoszGarba/php2shell-sigma-rules/main/LICENSE,
+         2026-10-23), file
+         rules/windows/process_creation/proc_creation_win_php_susp_child.yml
+         and the sibling Linux rule: they alert on a PHP interpreter process
+         spawning suspicious children (script host/php-cli spawning shells and
+         utility processes) as PHP2Shell post-exploitation coverage.
+         OUR DELTA: (a) re-anchor the parent scope to web PHP workers
+         (Apache/libphp/FPM/php-fpm) rather than any php process; (b) add the
+         PHP2Shell-specific loader command ./nfs php and the ELLIO-published
+         process-rename list from the delivered Potassium payload; (c) drop
+         their Windows selections into a separate companion rule family —
+         not replicated here (their Windows rule remains the reference for
+         that pipeline).
+         NOTE their published Sigma UUID:
+         d5236104-89fc-4e0c-b5c4-f887cb4eda0d (Windows rule, theirs).
+      2. ADAPTED: Lexsah/php2shell-detection rules/sigma/proc_php_worker_spawns_shell.yml
+         (MIT License, Copyright (c) 2026 Lexsah and contributors — fetched).
+         Their delta intent matches: php worker spawning a shell. OUR DELTA:
+         same scoping as (1a), plus ELLIO loader/daemon-rename indicators and
+         the wget of the published staging URL.
+
+    Exact published fingerprints used (all fetched 2026-10-23):
+      - "run it with the name of the vector as its argument" command form:
+        ./nfs php (ELLIO + Sophos IOC tables; file /tmp/nfs)
+      - staging URL http://92.118.112.100/nfs and Sophos-published variant ...
+        /nfs-setup (Arctic Wolf)
+      - process-name roulette from ELLIO binary analysis: the bot "renames its
+        process to one of telnetd, udhcpc, upnpd, watchdog, syslogd, klogd,
+        uhttpd, uchttpd"
+    Generic worker-spawns-shell logic is the standard post-exploitation net
+    (also recommended by Critical Start CRU ATT&CK mapping T1059.004 and
+    CISA's "PHP worker processes launching shells or downloading tools").
+references:
+    - https://github.com/BartoszGarba/php2shell-sigma-rules
+    - https://github.com/Lexsah/php2shell-detection
+    - https://ellio.tech/en/blog/php2shell-what-we-observed-and-what-to-do/
+    - https://www.sophos.com/en-us/security-advisories/sophos-sa-20261021-php2shell
+    - https://www.criticalstart.com/resources/php2shell-rce-vulnerabilities
+    - https://www.cisa.gov/news-events/alerts/2026/10/21/critical-vulnerabilities-php-require-immediate-patching
+author: IONSEC
+date: 2026-10-23
+modified: 2026-10-23
+tags:
+    - attack.execution
+    - attack.t1059.004
+    - attack.t1105
+    - attack.t1106
+    - cve.2026-109618
+    - cve.2026-109619
+logsource:
+    category: process_creation
+    product: linux
+detection:
+    sel_php_parent:
+        ParentImage|re: '(?i)(libphp|php-fpm|/php(fpm)?$|apache2)'
+    sel_shell_children:
+        Image|endswith:
+            - '/sh'
+            - '/bash'
+            - '/dash'
+            - '/python'
+            - '/perl'
+            - '/nc'
+            - '/ncat'
+            - '/curl'
+            - '/wget'
+    sel_nfs_loader:
+        CommandLine|endswith: './nfs php'
+    sel_loader_fetch:
+        CommandLine|contains:
+            - 'http://92.118.112.100/nfs'
+            - 'http://92.118.112.100/nfs-setup'
+    sel_roulette_renames:
+        CommandLine|contains:
+            - 'telnetd'
+            - 'udhcpc'
+            - 'upnpd'
+            - 'watchdog'
+            - 'syslogd'
+            - 'klogd'
+            - 'uhttpd'
+            - 'uchttpd'
+    condition: sel_nfs_loader or sel_loader_fetch or (sel_php_parent and sel_shell_children)
+falsepositives:
+    - 'Admin tooling and legit shell users may match the sel_php_parent + sel_shell_children pair if a php process legitimately spawns curl/wget (CI, package updates); triage with the /tmp/nfs and ./nfs php variants first (near-zero false positives)'
+    - 'Watchdog/syslogd renames are selected via CommandLine content and can hit unrelated admin activity that MENTIONS those names — prefer ELLIO/Potassium context'
+level: high

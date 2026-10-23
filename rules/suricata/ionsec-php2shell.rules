@@ -1,0 +1,159 @@
+# =============================================================================
+# IONSEC php2shell detector — Suricata rules
+# CVE-2026-109618 (RCE via OOM corruption) / CVE-2026-109619 (RCE via stale global state)
+# Compiled: 2026-10-23 · Author: IONSEC · File: ionsec-php2shell.rules
+# ==============================================================================
+# SRC + LICENSE NOTES (no silent copying):
+#
+# SIDs 1006500-1006502 are ADAPTED from Corelight's open-source ruleset
+#   github.com/corelight/php2shell-detect (suricata/php2shell.rules,
+#   SIDs 3000650 rev1 / 3000651 rev3 / 3000652 rev3, metadata created_at
+#   2026_10_16 — built BEFORE disclosure). fetched 2026-10-23:
+#   https://raw.githubusercontent.com/corelight/php2shell-detect/main/suricata/php2shell.rules
+#   LICENSE: BSD 3-Clause, Copyright (c) 2026, Corelight, Inc. (fetched same day).
+#   ADAPTATION DELTA: SID renumbered into our private block; msg reworded and
+#   CVE/CVSS labels made explicit; the pcre/version/threshold logic is theirs,
+#   unchanged; their reference: keywords retained and an IONSEC repo reference
+#   added. Their release has no attribution strings in rule text (by design);
+#   we carry the attribution here, in comments, per our shipping policy.
+#
+# SIDs 1006510-1006518 are IONSEC rules for patterns the Corelight release
+#   does NOT cover (self-naming UAs, published PoC boundary strings, hardcoded
+#   session values, execution canaries, loader/staging URLs, response canaries,
+#   oversize-PHPSESSID disclosure canary). Fingerprint provenance is cited
+#   per-group below; strings copied exactly as published (defanged wire-form
+#   conversions are noted inline where a cited source published "hxxp://...").
+#
+# SID RENUMBERING / PRIVATE RANGE:
+#   This file uses the documented Suricata local/private block
+#   1000000-1999999. The IONSEC php2shell allocation is 1006500-1006599:
+#   1006500-1006502 = Corelight-adapted (their 3000650-3000652, last four
+#   digits echoed for traceability), 1006510+ = IONSEC original. Do not
+#   redistribute with the original Corelight SIDs intact and do not merge
+#   both files into one ruleset without dropping one of each pair (they
+#   would double-alert).
+#
+# REQUIREMENTS (from Corelight's validated setup + ours):
+#   Validated origin for the Corelight rules: Suricata 8.0.6. HTTP body
+#   inspection must be enabled (request/response body limits and stream
+#   reassembly limits determine what content reaches these rules); encrypted
+#   HTTP requires decryption before inspection. Body-covering rules will
+#   miss oversized fragments if your request-body analysis depth is below
+#   the observed payload sizes (see the OOM shapes: 8 MiB+ bodies captured
+#   by ELLIO). No Suricata binary is present in the IONSEC build environment
+#   (documented 2026-10-23) — syntax was cross-checked against the
+#   Corelight 8.0.6-validated forms and reviewed by hand; run
+#   "suricata -T -c your/suricata.yaml" in your deployment before enforcing.
+# ==============================================================================
+
+# -----------------------------------------------------------------------------
+# GROUP A — adapted from Corelight (BSD 3-Clause), SIDs 1006500-1006502
+# -----------------------------------------------------------------------------
+# ADAPTED from Corelight SID 3000650 (revision: 1, created_at 2026_10_16, BSD 3-Clause
+# (c) 2026 Corelight, Inc.) — "Detection marker in a request body".
+# Their logic kept verbatim: http.method POST + http.request_body PHP_SESSION_UPLOAD_PROGRESS.
+# Delta: SID 3000650 -> 1006500, msg reworded, CVE/CVSS labels explicit; IONSEC repo
+# reference added. Source fingerprints: field name PHP_SESSION_UPLOAD_PROGRESS is the
+# PHP manual name for the session.upload_progress field; telemetry basis: ELLIO 743
+# requests carrying it (21 Oct) / F5 98%-share analysis (their published observations).
+alert http any any -> any any (msg:"IONSEC PHP2SHELL [adapted Corelight 3000650] upload_progress marker in HTTP POST body (CVE-2026-109618 / CVE-2026-109619 possible exploitation)"; flow:established,to_server; http.method; content:"POST"; http.request_body; content:"PHP_SESSION_UPLOAD_PROGRESS"; fast_pattern; reference:cve,2026-109618; reference:cve,2026-109619; reference:url,corelight.com/blog/php2shell-detection-before-disclosure; reference:url,github.com/corelight/php2shell-detect; reference:url,github.com/NCSC-NL/php2shell; classtype:web-application-attack; sid:1006500; rev:1;)
+
+# ADAPTED from Corelight SID 3000651 (rev3, BSD 3-Clause (c) 2026 Corelight, Inc.) —
+# "Potentially affected PHP version advertised by Server or X-Powered-By" — logic
+# verbatim; SID renumbered 3000651 -> 1006501; msg reworded. See their README note:
+# "TODO before release: Verify both rules' affected ranges ... against official PHP
+# advisories" — official fixed releases are now 8.2.35 / 8.3.36 / 8.4.27 / 8.5.12
+# (php.net 2026-10-21), matching their provisional cutoffs in this pcre.
+alert http any any -> any any (msg:"IONSEC PHP2SHELL [adapted Corelight 3000651] PHP advertises potentially affected version in response header (CVE-2026-109618 / CVE-2026-109619 software inventory)"; flow:established,to_client; http.response_header; content:"PHP/"; nocase; fast_pattern; pcre:"/^(?:X-Powered-By|Server):(?:[ \t]*|[^\r\n]*[ \t,\x3b(])PHP\/(?!(?:8\.2\.(?:3[5-9]|[4-9][0-9]|[1-9][0-9]{2,3})|8\.3\.(?:3[6-9]|[4-9][0-9]|[1-9][0-9]{2,3})|8\.4\.(?:2[7-9]|[3-9][0-9]|[1-9][0-9]{2,3})|8\.5\.(?:1[2-9]|[2-9][0-9]|[1-9][0-9]{2,3})))(?:5\.(?:[4-9]|[1-9][0-9]{1,2})|(?:[6-9]|[1-9][0-9])\.(?:0|[1-9][0-9]{0,2}))\.(?:0|[1-9][0-9]{0,3})(?:[-+][a-z0-9.+~_-]+)?(?:[ \t,\x3b)]|$)/i"; threshold: type limit, track by_src, count 1, seconds 3600; reference:cve,2026-109618; reference:cve,2026-109619; reference:url,corelight.com/blog/php2shell-detection-before-disclosure; reference:url,github.com/corelight/php2shell-detect; classtype:misc-activity; sid:1006501; rev:1;)
+
+# ADAPTED from Corelight SID 3000652 (rev3, BSD 3-Clause (c) 2026 Corelight, Inc.) —
+# "Potentially affected PHP version in a phpinfo-shaped HTML heading" — logic
+# verbatim; SID renumbered 3000652 -> 1006502; msg reworded. Their published caveat
+# applies verbatim: "The POST marker can occur in legitimate traffic and does not
+# establish an exploit attempt"; banner/version rules are software-inventory signals.
+alert http any any -> any any (msg:"IONSEC PHP2SHELL [adapted Corelight 3000652] phpinfo content advertises potentially affected PHP version (CVE-2026-109618 / CVE-2026-109619 software inventory)"; flow:established,to_client; http.response_body; content:"PHP Version"; nocase; fast_pattern; pcre:"/<h1(?:[ \t\r\n]+[^>]{0,128})?>[ \t\r\n]*PHP Version[ \t]+(?!(?:8\.2\.(?:3[5-9]|[4-9][0-9]|[1-9][0-9]{2,3})|8\.3\.(?:3[6-9]|[4-9][0-9]|[1-9][0-9]{2,3})|8\.4\.(?:2[7-9]|[3-9][0-9]|[1-9][0-9]{2,3})|8\.5\.(?:1[2-9]|[2-9][0-9]|[1-9][0-9]{2,3})))(?:5\.(?:[4-9]|[1-9][0-9]{1,2})|(?:[6-9]|[1-9][0-9])\.(?:0|[1-9][0-9]{0,2}))\.(?:0|[1-9][0-9]{0,3})(?:[-+][a-z0-9.+~_-]+)?[ \t\r\n]*<\/h1>/i"; threshold: type limit, track by_src, count 1, seconds 3600; reference:cve,2026-109618; reference:cve,2026-109619; reference:url,corelight.com/blog/php2shell-detection-before-disclosure; reference:url,github.com/corelight/php2shell-detect; classtype:misc-activity; sid:1006502; rev:1;)
+
+# -----------------------------------------------------------------------------
+# GROUP B — IONSEC rules for shapes/patterns the Corelight release lacks
+# Fingerprint sources (fetched 2026-10-23, strings copied EXACTLY as published):
+# ELLIO https://ellio.tech/en/blog/php2shell-what-we-observed-and-what-to-do/
+# F5 https://www.f5.com/labs/articles/php2shell-exploitation-attempts-observed
+# VulnCheck https://www.vulncheck.com/blog/php2shell-vulnerabilities
+# Sophos https://www.sophos.com/en-us/security-advisories/sophos-sa-20261021-php2shell
+# Flare https://flare.io/learn/resources/blog/php2shell-exploits-underground-analysis
+# Arctic Wolf https://arcticwolf.com/resources/blog/.../php2shell-critical-php...
+# Wiz https://www.wiz.io/blog/php2shell-php-rce
+# -----------------------------------------------------------------------------
+
+# B1 — self-naming scanner/verifier/PoC user-agents. Covers the published families
+# (F5 appendix; ELLIO indicators; VulnCheck Canary table; Flare): substrings
+# php2shell / PHP2Shell in any case, plus ELLIO's UA "Mozilla/5.0
+# (php-session-startup-rce-poc)". F5: legit-looking UAs were among the top-5
+# observed, so treat misses as clearance-free. Threshold keeps per-source noise down.
+alert http any any -> any any (msg:"IONSEC PHP2SHELL self-identifying tooling user-agent (CVE-2026-109618 / CVE-2026-109619 scanning family)"; flow:established,to_server; http.user_agent; pcre:"/(?i)(php2shell|php-session-startup-rce-poc)/"; threshold: type limit, track by_src, count 1, seconds 900; reference:cve,2026-109618; reference:cve,2026-109619; reference:url,www.f5.com/labs/articles/php2shell-exploitation-attempts-observed; reference:url,ellio.tech/en/blog/php2shell-what-we-observed-and-what-to-do/; reference:url,www.vulncheck.com/blog/php2shell-vulnerabilities; classtype:web-application-attack; sid:1006510; rev:1;)
+
+# B2 — published PoC boundary strings, exactly as published: F5 Pattern 3
+# "boundary=B7kQpoc618" + hardcoded PHPSESSID=a1b2c3d4e5f6a7b8c9d0e1f2a3; Flare
+# "multipart boundaries B7kQpoc618 / B7kQpoc619"; F5 Pattern 1 exact
+# "boundary=----php2shelld656557dacfa4fbc"; ELLIO "--nucleiBoundary" /
+# "------atk" / boundary "------p2s and eight hex digits" (the 8-hex generalization
+# is ELLIO's own wording). Boundary strings also delimit request bodies as
+# --<boundary> lines, so request_body inspection suffices.
+alert http any any -> any any (msg:"IONSEC PHP2SHELL published PoC multipart boundary string (CVE-2026-109618 / CVE-2026-109619)"; flow:established,to_server; http.request_body; pcre:"/B7kQpoc(618|619)|php2shelld656557dacfa4fbc|(--){2,3}p2s[0-9a-f]{8}|(--){2,3}p2shell|--nucleiBoundary|------atk/"; threshold: type limit, track by_src, count 1, seconds 900; reference:cve,2026-109618; reference:cve,2026-109619; reference:url,www.f5.com/labs/articles/php2shell-exploitation-attempts-observed; reference:url,ellio.tech/en/blog/php2shell-what-we-observed-and-what-to-do/; reference:url,flare.io/learn/resources/blog/php2shell-exploits-underground-analysis; reference:url,www.vulncheck.com/blog/php2shell-vulnerabilities; classtype:web-application-attack; sid:1006511; rev:1;)
+
+# B3 — ADAPTED from Zafran Research's lab-tested signature (published in
+# https://www.zafran.io/resources/php2shell-everything-you-need-to-know-about-the-two-critical-php-vulnerabilities,
+# fetched 2026-10-23; their sid:1026109620, Suricata version: content-byte string
+# name=|22|PHP_SESSION_UPLOAD_PROGRESS|22| — "The rules detect the exploit's
+# signature: a PHPSESSID value and the PHP_SESSION_UPLOAD_PROGRESS field sent
+# together in an upload"). DELTA: their byte-string kept verbatim; SID moved out of
+# their numeric space into our private block (1026109620 -> 1006512); msg reworded;
+# the PHPSESSID co-presence arm of their pattern lives in 1006513 below (their rule
+# required both contents inside http_client_body; PHPSESSID is more reliably in the
+# Cookie header, per F5 Pattern 2 — split cross-buffer so neither arm is blind).
+alert http any any -> any any (msg:"IONSEC PHP2SHELL upload_progress form field in quoted multipart name (CVE-2026-109618 / CVE-2026-109619) [adapted Zafran 1026109620]"; flow:established,to_server; http.request_body; content:"name=|22|PHP_SESSION_UPLOAD_PROGRESS|22|"; nocase; reference:cve,2026-109618; reference:cve,2026-109619; reference:url,www.zafran.io/resources/php2shell-everything-you-need-to-know-about-the-two-critical-php-vulnerabilities; classtype:web-application-attack; sid:1006512; rev:1;)
+
+# B4 — cross-buffer co-presence variant of the Zafran signature: PHPSESSID cookie
+# (16-hex per F5 Pattern 2) together with the PHP_SESSION_UPLOAD_PROGRESS body
+# field. F5 Pattern 2 published: "Cookie: PHPSESSID=<16-hex>" + body "PHP_SESSION_
+# UPLOAD_PROGRESS to a short X-prefixed value ... file field f with filename x.txt
+# and a body of the two literal bytes \0 ... boundary <64-hex-char random>".
+alert http any any -> any any (msg:"IONSEC PHP2SHELL PHPSESSID cookie + upload_progress field co-presence (CVE-2026-109618 / CVE-2026-109619 heap-grooming shape)"; flow:established,to_server; http.cookie; pcre:"/PHPSESSID=[0-9a-f]{16}(;|$)/i"; http.request_body; content:"PHP_SESSION_UPLOAD_PROGRESS"; nocase; threshold: type limit, track by_src, count 1, seconds 900; reference:cve,2026-109618; reference:cve,2026-109619; reference:url,www.f5.com/labs/articles/php2shell-exploitation-attempts-observed; reference:url,www.zafran.io/resources/php2shell-everything-you-need-to-know-about-the-two-critical-php-vulnerabilities; classtype:web-application-attack; sid:1006513; rev:1;)
+
+# B5 — hardcoded session/progress values + canary progress values, exactly as
+# published: F5 "PHPSESSID=a1b2c3d4e5f6a7b8c9d0e1f2a3"; VulnCheck
+# "xqsuvwz3n97wu8j3emz1axuo5y"; F5 "p2sprobec982a06c"; ELLIO "leaksessionid01",
+# "P2SMARK or P2SMK followed by random letters", "POC_79fe5e4f", "nuclei-probe".
+alert http any any -> any any (msg:"IONSEC PHP2SHELL hardcoded session identifier or canary progress value (CVE-2026-109618 / CVE-2026-109619)"; flow:established,to_server; http.request_body; pcre:"/a1b2c3d4e5f6a7b8c9d0e1f2a3|xqsuvwz3n97wu8j3emz1axuo5y|p2sprobec982a06c|leaksessionid01|P2SMARK|P2SMK|POC_79fe5e4f|nuclei-probe/"; threshold: type limit, track by_src, count 1, seconds 900; reference:cve,2026-109618; reference:cve,2026-109619; reference:url,www.f5.com/labs/articles/php2shell-exploitation-attempts-observed; reference:url,www.vulncheck.com/blog/php2shell-vulnerabilities; reference:url,ellio.tech/en/blog/php2shell-what-we-observed-and-what-to-do/; classtype:web-application-attack; sid:1006514; rev:1;)
+
+# B6 — weaponized execution canaries in request bodies, exactly as published:
+# ELLIO "uname -a; id; echo JACKALPOC"; ELLIO "system(base64_decode(" wrapping
+# "echo PHP2SHELL_OK; id; whoami"; VulnCheck webshell "<?php echo 'PWNED::';
+# system($_GET['c']); ?>" (PWNED:: = ran); Arctic Wolf "PHP2SHELL_CONFIRMED" and
+# "wget .../nfs-setup". nf-setup URL is defang-uncloaked from the published
+# hxxp://92.118.112[.]100/nfs-setup (Arctic Wolf).
+alert http any any -> any any (msg:"IONSEC PHP2SHELL weaponized execution canary in request body (CVE-2026-109618 / CVE-2026-109619 exploitation attempt)"; flow:established,to_server; http.request_body; pcre:"/uname -a; id; echo JACKALPOC|system\(base64_decode\(|echo PHP2SHELL_OK; id; whoami|PWNED::|php2shell_out_start|php2shell_out_end|echo PHP2SHELL_CONFIRMED/"; reference:cve,2026-109618; reference:cve,2026-109619; reference:url,ellio.tech/en/blog/php2shell-what-we-observed-and-what-to-do/; reference:url,www.vulncheck.com/blog/php2shell-vulnerabilities; reference:url,arcticwolf.com/resources/blog/php2shell-critical-php-vulnerabilities-enable-unauthenticated-remote-code-execution/; classtype:web-application-attack; sid:1006515; rev:1;)
+
+# B7 — loader/staging fetch and php://filter session-file read-back, exactly as
+# published: ELLIO "second-stage download http://92.118.112.100/nfs" (wire form;
+# their published URL is unfanged in this case); Sophos IOC variant fetch of
+# /nfs-setup (defang-uncloaked from Arctic Wolf hxxp://92.118.112[.]100/nfs-setup);
+# VulnCheck webshell-planting operator read-backs GET ...?file=php://filter/...
+# sess_xqsuvwz3n97wu8j3emz1axuo5y (sess_<26 hex>).
+alert http any any -> any any (msg:"IONSEC PHP2SHELL loader fetch to staging 92.118.112.100 or php://filter session read-back (CVE-2026-109618 / CVE-2026-109619 delivery chain)"; flow:established,to_server; http.uri; pcre:"/92\.118\.112\.100\/nfs(-setup)?|php%3[aA]%2[fF]%2[fF]filter|php:\/\/filter/"; pcre:"/(\/|&|\?)[^ ]*sess_[0-9a-f]{20,40}/"; reference:cve,2026-109618; reference:cve,2026-109619; reference:url,ellio.tech/en/blog/php2shell-what-we-observed-and-what-to-do/; reference:url,www.sophos.com/en-us/security-advisories/sophos-sa-20261021-php2shell; reference:url,www.vulncheck.com/blog/php2shell-vulnerabilities; classtype:web-application-attack; sid:1006516; rev:1;)
+
+# B8 — response-phase canaries: a body hit means an attempt, a RESPONSE hit means
+# the payload ran. Exactly as published: VulnCheck "PWNED:: in any response means
+# it ran"; ELLIO "whose marker JACKALPOC means it was run unmodified"; F5 app.
+# "php2shell_out_start" echo pattern; ELLIO "echo PHP2SHELL_OK".
+alert http any any -> any any (msg:"IONSEC PHP2SHELL execution canary in response body (CVE-2026-109618 / CVE-2026-109619 COMPROMISE SIGNAL)"; flow:established,to_client; http.response_body; pcre:"/PWNED::|JACKALPOC|php2shell_out_start|PHP2SHELL_OK/"; reference:cve,2026-109618; reference:cve,2026-109619; reference:url,www.vulncheck.com/blog/php2shell-vulnerabilities; reference:url,ellio.tech/en/blog/php2shell-what-we-observed-and-what-to-do/; classtype:web-application-attack; sid:1006517; rev:1;)
+
+# B9 — response Set-Cookie disclosure canary (Wiz's generic signal, no published
+# byte threshold): "a later multipart request URL-encodes reclaimed memory into
+# the PHPSESSID response cookie ... The forged-structure body is ... Wiz's generic
+# signal: unexpectedly large or malformed PHPSESSID response cookies". TUNING
+# PARAMETER: 120 chars is OUR threshold (normal PHP session ids are ~26-32 hex);
+# percent-run variant targets the URL-encoded leak shape. Listed in open decisions.
+alert http any any -> any any (msg:"IONSEC PHP2SHELL oversized/malformed PHPSESSID response cookie (CVE-2026-109618 memory-disclosure canary heuristic)"; flow:established,to_client; http.response_header; pcre:"/PHPSESSID=[0-9A-Za-z%._-]{120,}|PHPSESSID=[^\x3b\r\n]*(%[0-9A-Fa-f]{2}){20,}/"; threshold: type limit, track by_src, count 1, seconds 3600; reference:cve,2026-109618; reference:cve,2026-109619; reference:url,www.wiz.io/blog/php2shell-php-rce; classtype:web-application-attack; sid:1006518; rev:1;)
+
+# --- END ionsec-php2shell.rules — next free private SID in block: 1006519 ---

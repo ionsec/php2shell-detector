@@ -1,0 +1,1 @@
+fixture scratch file; drift check: no match expected here

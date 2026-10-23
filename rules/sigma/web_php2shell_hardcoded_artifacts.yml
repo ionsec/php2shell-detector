@@ -1,0 +1,78 @@
+# =====================================================================
+# IONSEC php2shell detector — SIGMA / webserver + WAF logs (hardcoded artifacts)
+# CVE-2026-109618 / CVE-2026-109619 — hardcoded session + canary values
+# =====================================================================
+title: PHP2Shell Hardcoded Session Identifier and Progress-Value Artifacts (CVE-2026-109618 / CVE-2026-109619)
+id: 10f63b79-bfa0-5404-85d0-5d6a39d57f35
+status: experimental
+description: |
+    Detects hardcoded session identifiers and canary progress values observed
+    in PHP2Shell tooling. Every value copied EXACTLY as published:
+
+      - "a1b2c3d4e5f6a7b8c9d0e1f2a3" — F5 Pattern 3 "the hardcoded
+        PHPSESSID=a1b2c3d4... is a static PoC artifact" (full 24-hex value in
+        the published request example: Cookie: PHPSESSID=a1b2c3d4e5f6a7b8c9d0e1f2a3)
+      - "xqsuvwz3n97wu8j3emz1axuo5y" — VulnCheck Canary indicator ("PHPSESSID
+        value / session filename"): the 221.14.159.134 webshell-planting
+        operator sent 10x GET /download.php?file=php://filter/... reads of
+        session file sess_xqsuvwz3n97wu8j3emz1axuo5y (all 404) after planting
+        the shell via PHP_SESSION_UPLOAD_PROGRESS
+      - "p2sprobec982a06c" — F5 Pattern 1 "The PHP_SESSION_UPLOAD_PROGRESS
+        field value is p2sprobec982a06c"
+      - "leaksessionid01" — ELLIO: PHPSESSID in the 1,000-part a0000[0]-a0997[0]
+        array-field body; the same session generator shared by four addresses
+        on four networks (77.237.246.73/146.70.184.216/34.136.122.211/38.207.136.217)
+      - "P2SMARK" / "P2SMK" — ELLIO: "writes a canary into the progress field,
+        P2SMARK or P2SMK followed by random letters"
+      - "POC_79fe5e4f" — ELLIO (47.238.232.123, boundary ------atk)
+      - "nuclei-probe" — ELLIO Nuclei family (122.97.242.167, boundary --nucleiBoundary)
+
+    The php://filter session-file read-back pattern (GET queries of
+    php://filter/...resource=sess_<id>) is the follow-on step ELLIO tags as an
+    "older, unrelated technique" when it appears alone; when it follows a
+    PHP_SESSION_UPLOAD_PROGRESS write it is the 109618-path webshell chain.
+    A PHPSESSID of a single NUL byte (ELLIO 152.233.51.47) is a structural
+    shape, not a literal string — left to the grooming rule family.
+references:
+    - https://www.f5.com/labs/articles/php2shell-exploitation-attempts-observed
+    - https://www.vulncheck.com/blog/php2shell-vulnerabilities
+    - https://ellio.tech/en/blog/php2shell-what-we-observed-and-what-to-do/
+author: IONSEC
+date: 2026-10-23
+modified: 2026-10-23
+tags:
+    - attack.initial-access
+    - attack.t1190
+    - attack.t1078.001
+    - cve.2026-109618
+    - cve.2026-109619
+logsource:
+    category: webserver
+detection:
+    sel_cookie_id:
+        cs-cookie|contains:
+            - 'PHPSESSID=a1b2c3d4e5f6a7b8c9d0e1f2a3'
+            - 'PHPSESSID=xqsuvwz3n97wu8j3emz1axuo5y'
+            - 'PHPSESSID=leaksessionid01'
+    sel_session_file_read:
+        c-uri-query|contains:
+            - 'sess_xqsuvwz3n97wu8j3emz1axuo5y'
+    sel_body_values:
+        request_body|contains:
+            - 'a1b2c3d4e5f6a7b8c9d0e1f2a3'
+            - 'xqsuvwz3n97wu8j3emz1axuo5y'
+            - 'p2sprobec982a06c'
+            - 'leaksessionid01'
+            - 'P2SMARK'
+            - 'P2SMK'
+            - 'POC_79fe5e4f'
+            - 'nuclei-probe'
+    sel_php_filter_read:
+        c-uri-query|contains|all:
+            - 'php://filter'
+            - 'sess_'
+    condition: 1 of sel_*
+falsepositives:
+    - 'Authorized scanners replaying published PoC values'
+    - "PHPSESSID=leaksessionid01-style values could collide with application test fixtures only; the 24-hex constants are near-zero collision"
+level: high

@@ -1,0 +1,61 @@
+# =====================================================================
+# IONSEC php2shell detector — SIGMA / file-event (Linux)
+# CVE-2026-109618 + CVE-2026-109619 — loader-drift fingerprints (Potassium, ELLIO/Sophos)
+# =====================================================================
+title: PHP2Shell Delivered Loader Dropped to /tmp — Potassium Mirai-Variant ELF (CVE-2026-109618 / CVE-2026-109619)
+id: 83e05a74-8d6b-5868-88ba-e54ce4c229f5
+status: experimental
+description: |
+    File-event companion for the loader-drift fingerprints documented by the
+    sensor-telemetry sources: ELLIO observed the weaponized variant of the
+    public PoC whose only modification was swapping the default command for a
+    Mirai loader fetch ("fetch a binary from a hard-coded address into /tmp,
+    make it executable and run it with the name of the vector as its argument,
+    the convention Mirai-like loaders use"); Sophos independently published
+    the same IOC table: UA php2shell-scan/109618, boundary B7kQpoc618, file
+    /tmp/nfs, command ./nfs php.
+
+    Exact published file indicators (ELLIO + Sophos, byte-identical in both):
+      - drop filename: /tmp/nfs (loader fetched via wget of
+        http(s)://92.118.112.100/nfs — staging host 92.118.112.100, AS215540)
+      - SHA-256: 0c5486f06620e26e316f4b33f318b0d646d5e1133789331aa2fed012360d1486
+      - MD5:     b61a098fc62a2c2696e196dca78da71a
+      - binary structure as published: 179,632 bytes, ELF x86-64, statically
+        linked, stripped ("almost nothing in its strings beyond C library text")
+      - binary family: Potassium, Mirai-derived (Nokia Deepfield May 2026
+        documentation; ChaCha20 key 5a3f2e7b8c9d0a6e3b4f7c8a1d5c2b0d6f1a0c3e2d8e4a091c7e5a4d3c2b6a08,
+        nonce 4a1b00ff2d7c3a1200010305 — exact values as published)
+
+    The hash and filename are file-creation/event facts copied from the two
+    independently confirming telemetry sources; file-size and ELF-string
+    selectors vary by log pipeline and are documented, not asserted as
+    universal fields.
+references:
+    - https://ellio.tech/en/blog/php2shell-what-we-observed-and-what-to-do/
+    - https://www.sophos.com/en-us/security-advisories/sophos-sa-20261021-php2shell
+    - https://arcticwolf.com/resources/blog/php2shell-critical-php-vulnerabilities-enable-unauthenticated-remote-code-execution/
+author: IONSEC
+date: 2026-10-23
+modified: 2026-10-23
+tags:
+    - attack.execution
+    - attack.t1105
+    - attack.t1059.004
+    - attack.defense-evasion
+    - attack.t1027.006
+    - cve.2026-109618
+    - cve.2026-109619
+logsource:
+    category: file_event
+    product: linux
+detection:
+    sel_drop_path:
+        TargetFilename|endswith: '/tmp/nfs'
+    sel_sha256:
+        Hash|contains: '0c5486f06620e26e316f4b33f318b0d646d5e1133789331aa2fed012360d1486'
+    sel_md5:
+        Hash|contains: 'b61a098fc62a2c2696e196dca78da71a'
+    condition: 1 of sel_*
+falsepositives:
+    - 'A legitimate binary coincidentally named /tmp/nfs (nfs-tooling) that also matches the published hash is unknown; hash match is the decisive filter'
+level: critical

@@ -1,0 +1,2 @@
+[21-Oct-2026 09:15:02 UTC] PHP Notice:  Undefined index: theme in /var/www/html/footer.php on line 12
+[21-Oct-2026 09:15:03 UTC] PHP Notice:  Undefined offset: 0 in /var/www/html/footer.php on line 19

@@ -1,0 +1,2 @@
+# fixture webroot for smoke run (synthetic)
+php_value memory_limit 16M
